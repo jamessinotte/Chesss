@@ -1,0 +1,53 @@
+.authContainer {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.authForm, .authBox {
+  width: min(420px, 100%);
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  border-radius: var(--radius);
+  padding: 22px 20px;
+  box-shadow: var(--shadow-lg);
+  display: grid;
+  gap: 12px;
+}
+
+.authForm input {
+  background: var(--elev);
+  color: var(--text);
+  border: 1px solid var(--stroke);
+  border-radius: 10px;
+  padding: 12px 14px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.authForm input:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(59,130,246,.15);
+}
+
+.authForm button {
+  background: linear-gradient(180deg, var(--brand-500), var(--brand-600));
+  color: white; border: 0; border-radius: 10px;
+  padding: 12px 14px; font-weight: 700; cursor: pointer;
+  transition: transform .04s ease, box-shadow .2s ease;
+}
+.authForm button:hover { box-shadow: 0 12px 28px rgba(37,99,235,.35); }
+.authForm button:active { transform: translateY(1px); }
+
+.authContainer h2 {
+  margin: 0 0 6px;
+  font-weight: 800;
+  letter-spacing: .2px;
+}
+
+.error {
+  color: var(--danger);
+  font-size: .95rem;
+  margin-top: 4px;
+}
+

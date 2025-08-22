@@ -1,0 +1,102 @@
+.Signin {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 100vh;
+    padding: 20px;
+    font-family: 'Roboto', sans-serif;
+    background: linear-gradient(90deg, skyblue 0%, rgb(120, 211, 247) 50%);
+  }
+  
+  .Form {
+    background: #FFFFFF;
+    padding: 50px;
+    width: 380px;
+    margin: 0 auto;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+  }
+  
+  .Title {
+    font-family: 'Roboto', sans-serif;
+    color: #444;
+    font-size: 1.8em;
+    font-weight: bold;
+    margin-bottom: 10px;
+  }
+  
+  .Heading {
+    font-family: 'Roboto', sans-serif;
+    color: #666;
+    font-size: 1.4em;
+    font-weight: 500;
+    margin-bottom: 25px;
+  }
+  
+  .Inputs {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0 0 25px;
+    width: 100%;
+  }
+  
+  .emailBox, .passwordBox {
+    font-family: 'Roboto', sans-serif;
+    background: #f2f2f2;
+    width: 100%;
+    border: 0;
+    padding: 15px;
+    box-sizing: border-box;
+    font-size: 15px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+  }
+  
+  .Submit {
+    font-family: 'Roboto', sans-serif;
+    text-transform: uppercase;
+    background: skyblue;
+    width: 100%;
+    border: 0;
+    padding: 15px;
+    color: #FFFFFF;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background 0.3s ease;
+  }
+  
+  .Submit:hover, .Submit:active, .Submit:focus {
+    background: rgb(108, 197, 233);
+  }
+  
+  .Signup {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding-top: 20px;
+  }
+  
+  .SignupText, .SignupLink {
+    font-size: 0.9em;
+    color: skyblue;
+  }
+  
+  .SignupLink {
+    font-weight: bold;
+    margin-left: 5px;
+    text-decoration: none;
+  }
+  
+  .SignupLink:hover {
+    text-decoration: underline;
+  }
+  
+  .ErrorMessage {
+    color: red;
+    margin-top: 10px;
+    text-align: center;
+  }

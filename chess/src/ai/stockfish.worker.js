@@ -1,0 +1,1 @@
+self.importScripts("/engines/stockfish.js");
