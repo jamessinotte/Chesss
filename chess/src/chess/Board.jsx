@@ -6,8 +6,8 @@ import captureSoundFile from './assets/capture.mp3';
 
 class Square {
   constructor(piece = null) {
-    this.piece = piece;
-    this.highlight = null;
+    this.piece = piece;        // piece on this square (or null)
+    this.highlight = null;     // used for showing legal moves
   }
 }
 
@@ -15,49 +15,52 @@ export default class Board extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      turn: 'white',
-      selected: null,
-      map: this.createEmptyBoard(),
-      logicMap: this.createEmptyLogicMap(),
-      moveset: {},
-      captured: { white: [], black: [] },
-      check: false,
-      pendingPromotion: null,
+      turn: 'white',                 // whose turn it is
+      selected: null,                // currently selected square [row, col]
+      map: this.createEmptyBoard(),  // UI board (Squares)
+      logicMap: this.createEmptyLogicMap(), // raw piece board for move logic
+      moveset: {},                   // legal moves for selected piece (keyed by "r,c")
+      captured: { white: [], black: [] }, // captured pieces by team
+      check: false,                  // whether the current side is in check
+      pendingPromotion: null,        // used for pawn promotion UI
     };
 
+    // sounds for move/capture feedback
     this.moveSound = new Audio(moveSoundFile);
     this.captureSound = new Audio(captureSoundFile);
   }
 
   componentDidMount() {
-    this.setupPieces();
+    this.setupPieces(); // place all pieces at start
   }
 
   componentDidUpdate(prevProps) {
+    // If parent changed the step (undo/rewind), rebuild the board to that point
     if (this.props.enableUndo && prevProps.step !== this.props.step) {
       this.replayMoves(this.props.step);
     }
   }
 
-  // ---------- orientation helpers ----------
+  // orientation controls whether the board is flipped for black
   getOrientation = () =>
     (this.props.orientation || this.props.playerColor || 'white') === 'black' ? 'black' : 'white';
 
-  // view (what user sees) -> model (internal 0..7 coords)
+  // Convert clicked screen coords -> internal board coords
   viewToModel = (r, c) =>
     this.getOrientation() === 'white' ? [r, c] : [7 - r, 7 - c];
 
-  // model -> view (for keys / hit testing)
+  // Convert internal board coords -> screen coords
   modelToView = (r, c) =>
     this.getOrientation() === 'white' ? [r, c] : [7 - r, 7 - c];
 
-  // ---------- board bootstraps ----------
+  // Build an 8x8 board of Square objects (UI version)
   createEmptyBoard() {
     return Array(8)
       .fill(null)
       .map(() => Array(8).fill(null).map(() => new Square()));
   }
 
+  // Build an 8x8 board of just pieces/null (logic version)
   createEmptyLogicMap() {
     return Array(8)
       .fill(null)
@@ -72,13 +75,14 @@ export default class Board extends Component {
   }
 
   setupPiecesOnMap(map, logicMap) {
+    // helper for placing a piece in both maps
     const place = (row, col, piece) => {
       piece.coord = [row, col];
       map[row][col] = new Square(piece);
       logicMap[row][col] = piece;
     };
 
-    // white (bottom in model space)
+    // white pieces
     place(7, 0, new Rook('white'));
     place(7, 1, new Knight('white'));
     place(7, 2, new Bishop('white'));
@@ -89,7 +93,7 @@ export default class Board extends Component {
     place(7, 7, new Rook('white'));
     for (let i = 0; i < 8; i++) place(6, i, new Pawn('white'));
 
-    // black (top in model space)
+    // black pieces
     place(0, 0, new Rook('black'));
     place(0, 1, new Knight('black'));
     place(0, 2, new Bishop('black'));
@@ -102,15 +106,18 @@ export default class Board extends Component {
   }
 
   replayMoves(step) {
+    // reset the board to starting position first
     const map = this.createEmptyBoard();
     const logicMap = this.createEmptyLogicMap();
     this.setupPiecesOnMap(map, logicMap);
 
+    // apply moves up to "step"
     for (let i = 0; i < step; i++) {
       const move = this.props.history[i];
       const [fr, fc] = this.fromChessNotation(move.from);
       const [tr, tc] = this.fromChessNotation(move.to);
 
+      // rebuild the moving piece from saved move info
       const PieceClass = { Pawn, Rook, Knight, Bishop, Queen, King }[move.piece];
       const movingPiece = new PieceClass(move.team);
       movingPiece.coord = [tr, tc];
@@ -122,6 +129,7 @@ export default class Board extends Component {
       logicMap[fr][fc] = null;
     }
 
+    // step parity tells whose turn it is
     this.setState({
       map,
       logicMap,
@@ -129,67 +137,84 @@ export default class Board extends Component {
     });
   }
 
-  // ---------- clicks ----------
+  // clicks
   handleSquareClick = (viewRow, viewCol) => {
-    // Only accept clicks on the human's turn
+    // Only allow clicks when it's the human player's turn
     const human = this.props.playerColor || 'white';
     if (this.state.turn !== human) return;
 
-    const [row, col] = this.viewToModel(viewRow, viewCol);
+    const arr = this.viewToModel(viewRow, viewCol);
+    const row = arr[0];
+    const col = arr[1];
+
     const clickedSquare = this.state.map[row][col];
-    const clickedPiece = clickedSquare.piece;
+    const clickedPiece = clickedSquare ? clickedSquare.piece : null;
+
     const key = row + ',' + col;
 
-    if (this.state.selected && this.state.moveset[key]) {
+    // If a piece is selected and this square is legal, move there
+    if (this.state.selected && this.state.moveset && this.state.moveset[key]) {
       this.makeMove(this.state.selected, [row, col]);
       this.clearSelection();
       return;
     }
 
+    // Select your own piece to see legal moves
     if (clickedPiece && clickedPiece.team === this.state.turn) {
       this.selectPiece(row, col, clickedPiece);
       return;
     }
 
+    // Clicking empty / enemy square clears selection
     this.clearSelection();
   };
 
   makeOpponentMove(move) {
-    const [startRow, startCol] = this.fromChessNotation(move.from);
-    const [endRow, endCol] = this.fromChessNotation(move.to);
-    this.makeMove([startRow, startCol], [endRow, endCol]);
+    // Used by AI and multiplayer to apply a move directly
+    const start = this.fromChessNotation(move.from);
+    const end = this.fromChessNotation(move.to);
+    this.makeMove([start[0], start[1]], [end[0], end[1]]);
   }
 
-  // ---------- movement / rules ----------
   selectPiece(row, col, piece) {
+    // Start with raw moves from the piece rules
     const rawMoves = piece.moveset(this.state.logicMap);
     const legalMoves = {};
-    const [startRow, startCol] = piece.coord;
+    const startRow = piece.coord[0];
+    const startCol = piece.coord[1];
 
-    for (const [r, c] of rawMoves) {
+    // Filter out moves that would leave your king in check
+    for (let i = 0; i < rawMoves.length; i++) {
+      const r = rawMoves[i][0];
+      const c = rawMoves[i][1];
+
       const testBoard = this.state.logicMap.map((row) => row.slice());
       testBoard[r][c] = piece;
       testBoard[startRow][startCol] = null;
 
       if (!this.isInCheck(piece.team, testBoard)) {
-        legalMoves[`${r},${c}`] = 'move';
+        legalMoves[r + ',' + c] = 'move';
       }
     }
 
-    this.setState({ selected: [row, col], moveset: legalMoves }, () =>
-      this.highlightSquares(legalMoves)
+    this.setState(
+      { selected: [row, col], moveset: legalMoves },
+      () => this.highlightSquares(legalMoves)
     );
   }
 
   clearSelection() {
+    // clears selected square + highlighted moves
     this.setState({ selected: null, moveset: {} }, this.clearHighlights);
   }
 
+  // Convert internal coords to something like "E2"
   toChessNotation(row, col) {
     const files = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-    return `${files[col]}${8 - row}`;
+    return files[col] + (8 - row);
   }
 
+  // Convert "E2" back into [row, col]
   fromChessNotation(notation) {
     const files = { A: 0, B: 1, C: 2, D: 3, E: 4, F: 5, G: 6, H: 7 };
     const col = files[notation[0]];
@@ -198,17 +223,28 @@ export default class Board extends Component {
   }
 
   makeMove(start, end) {
-    const [startRow, startCol] = start;
-    const [endRow, endCol] = end;
-    const piece = this.state.map[startRow][startCol]?.piece;
-    const target = this.state.map[endRow][endCol]?.piece;
+    const startRow = start[0];
+    const startCol = start[1];
+    const endRow = end[0];
+    const endCol = end[1];
+
+    const piece = this.state.map[startRow][startCol]
+      ? this.state.map[startRow][startCol].piece
+      : null;
+
+    const target = this.state.map[endRow][endCol]
+      ? this.state.map[endRow][endCol].piece
+      : null;
 
     if (!piece) return;
 
-    const newMap = this.state.map.map((row) => row.map((sq) => new Square(sq.piece)));
+    // clone boards so we can update without mutating old state
+    const newMap = this.state.map.map((row) =>
+      row.map((sq) => new Square(sq.piece))
+    );
     const newLogicMap = this.state.logicMap.map((row) => row.slice());
 
-    // en passant
+    // en passant capture
     if (piece.constructor.name === 'Pawn' && startCol !== endCol && target == null) {
       const capturedPawn = this.state.logicMap[startRow][endCol];
       if (
@@ -219,14 +255,16 @@ export default class Board extends Component {
       ) {
         newMap[startRow][endCol].piece = null;
         newLogicMap[startRow][endCol] = null;
+
         const captured = { ...this.state.captured };
         captured[capturedPawn.team].push(capturedPawn);
         this.setState({ captured });
+
         this.captureSound.play().catch(() => {});
       }
     }
 
-    // normal capture
+    // normal capture vs normal move (sound + captured list)
     if (target && target.team !== piece.team) {
       const captured = { ...this.state.captured };
       captured[target.team].push(target);
@@ -236,12 +274,13 @@ export default class Board extends Component {
       this.moveSound.play().catch(() => {});
     }
 
-    // apply move
+    // move the piece on both maps
     newMap[endRow][endCol].piece = piece;
     newMap[startRow][startCol].piece = null;
     newLogicMap[endRow][endCol] = piece;
     newLogicMap[startRow][startCol] = null;
 
+    // update piece state
     piece.coord = [endRow, endCol];
     piece.hasMoved = true;
     if (piece.constructor.name === 'Pawn') {
@@ -260,41 +299,48 @@ export default class Board extends Component {
         check: this.isInCheck(nextTurn, newLogicMap),
       },
       () => {
-        this.props.onMoveMade?.({
-          team: piece.team,
-          piece: piece.constructor.name,
-          from: this.toChessNotation(startRow, startCol),
-          to: this.toChessNotation(endRow, endCol),
-          captured: target ? target.constructor.name : null,
-        });
+        // tell parent about the move (for history/AI/multiplayer)
+        if (this.props.onMoveMade) {
+          this.props.onMoveMade({
+            team: piece.team,
+            piece: piece.constructor.name,
+            from: this.toChessNotation(startRow, startCol),
+            to: this.toChessNotation(endRow, endCol),
+            captured: target ? target.constructor.name : null,
+          });
+        }
 
+        // check for checkmate/stalemate
         const noMoves = !this.hasAnyLegalMove(nextTurn, newLogicMap);
         if (noMoves) {
           const inCheck = this.isInCheck(nextTurn, newLogicMap);
           if (inCheck) {
-            const winner = piece.team; // side that just moved
-            this.props.onGameEnd?.(winner, 'checkmate');
+            const winner = piece.team;
+            if (this.props.onGameEnd) this.props.onGameEnd(winner, 'checkmate');
           } else {
-            this.props.onGameEnd?.(null, 'stalemate');
+            if (this.props.onGameEnd) this.props.onGameEnd(null, 'stalemate');
           }
         }
 
-        this.props.onTurnChange?.(nextTurn);
+        if (this.props.onTurnChange) this.props.onTurnChange(nextTurn);
       }
     );
   }
 
-  // --------- check / mate helpers ----------
+  // find the king so we can test check
   findKingPosition(team, board) {
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const p = board[r][c];
-        if (p && p.constructor.name === 'King' && p.team === team) return [r, c];
+        if (p && p.constructor.name === 'King' && p.team === team) {
+          return [r, c];
+        }
       }
     }
     return null;
   }
 
+  // check = any enemy move can hit the king square
   isInCheck(team, board) {
     const opp = team === 'white' ? 'black' : 'white';
     const kingPos = this.findKingPosition(team, board);
@@ -305,7 +351,9 @@ export default class Board extends Component {
         const p = board[r][c];
         if (p && p.team === opp) {
           const moves = p.moveset(board);
-          for (const [mr, mc] of moves) {
+          for (let i = 0; i < moves.length; i++) {
+            const mr = moves[i][0];
+            const mc = moves[i][1];
             if (mr === kingPos[0] && mc === kingPos[1]) return true;
           }
         }
@@ -314,16 +362,22 @@ export default class Board extends Component {
     return false;
   }
 
+  // used to detect mate/stalemate
   hasAnyLegalMove(team, board) {
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
         const p = board[r][c];
         if (!p || p.team !== team) continue;
+
         const moves = p.moveset(board);
-        for (const [tr, tc] of moves) {
+        for (let i = 0; i < moves.length; i++) {
+          const tr = moves[i][0];
+          const tc = moves[i][1];
+
           const test = board.map((row) => row.slice());
           test[tr][tc] = p;
           test[r][c] = null;
+
           if (!this.isInCheck(team, test)) return true;
         }
       }
@@ -331,12 +385,12 @@ export default class Board extends Component {
     return false;
   }
 
-  // ---------- visuals ----------
+  // highlights legal move squares for the selected piece
   highlightSquares(moveset) {
     const newMap = this.state.map.map((row, r) =>
       row.map((sq, c) => {
         const ns = new Square(sq.piece);
-        const key = `${r},${c}`;
+        const key = r + ',' + c;
         ns.highlight = moveset[key] || null;
         return ns;
       })
@@ -356,12 +410,19 @@ export default class Board extends Component {
   }
 
   renderSquare(modelRow, modelCol) {
-    const [viewRow, viewCol] = this.modelToView(modelRow, modelCol);
+    // convert model coords -> view coords for stable React keys
+    const pos = this.modelToView(modelRow, modelCol);
+    const viewRow = pos[0];
+    const viewCol = pos[1];
+
     const square = this.state.map[modelRow][modelCol];
     const isDark = (modelRow + modelCol) % 2 === 1;
 
+    // build class list based on square state
     let classes = styles.square + ' ';
-    classes += isDark ? styles.dark + ' ' : styles.light + ' ';
+    if (isDark) classes += styles.dark + ' ';
+    else classes += styles.light + ' ';
+
     if (square.highlight === 'move') classes += styles.highlight + ' ';
     if (
       this.state.selected &&
@@ -371,28 +432,28 @@ export default class Board extends Component {
       classes += styles.selected;
     }
 
-    // Unicode piece map: outlined = white team, filled = black team
+    // unicode pieces for display
     const symbols = {
-      Pawn:   { white: '♙', black: '♟' },
-      Rook:   { white: '♖', black: '♜' },
+      Pawn: { white: '♙', black: '♟' },
+      Rook: { white: '♖', black: '♜' },
       Knight: { white: '♘', black: '♞' },
       Bishop: { white: '♗', black: '♝' },
-      Queen:  { white: '♕', black: '♛' },
-      King:   { white: '♔', black: '♚' },
+      Queen: { white: '♕', black: '♛' },
+      King: { white: '♔', black: '♚' },
     };
 
     let display = '';
     let pieceClass = styles.piece;
+
     if (square.piece) {
       const team = square.piece.team;
       display = symbols[square.piece.constructor.name][team];
-      pieceClass +=
-        ' ' + (team === 'white' ? styles.whitePiece : styles.blackPiece);
+      pieceClass += ' ' + (team === 'white' ? styles.whitePiece : styles.blackPiece);
     }
 
     return (
       <div
-        key={`${viewRow}-${viewCol}`}
+        key={viewRow + '-' + viewCol}
         className={classes}
         onClick={() => this.handleSquareClick(viewRow, viewCol)}
       >
@@ -405,6 +466,8 @@ export default class Board extends Component {
     return (
       <div className={styles.moveHistory}>
         <h3>Move History</h3>
+
+        {/* clicking a move jumps the board back to that step */}
         {this.props.history.map((move, index) => (
           <div
             key={index}
@@ -420,26 +483,29 @@ export default class Board extends Component {
 
   renderCaptured() {
     const symbols = {
-      Pawn:   { white: '♙', black: '♟' },
-      Rook:   { white: '♖', black: '♜' },
+      Pawn: { white: '♙', black: '♟' },
+      Rook: { white: '♖', black: '♜' },
       Knight: { white: '♘', black: '♞' },
       Bishop: { white: '♗', black: '♝' },
-      Queen:  { white: '♕', black: '♛' },
-      King:   { white: '♔', black: '♚' },
+      Queen: { white: '♕', black: '♛' },
+      King: { white: '♔', black: '♚' },
     };
 
     return (
       <div className={styles.capturedSection}>
         <div>
           <strong>White captured:</strong>
+          {/* pieces black lost */}
           {this.state.captured.black.map((p, i) => (
             <span key={i} className={styles.whitePiece}>
               {symbols[p.constructor.name].black}
             </span>
           ))}
         </div>
+
         <div>
           <strong>Black captured:</strong>
+          {/* pieces white lost */}
           {this.state.captured.white.map((p, i) => (
             <span key={i} className={styles.blackPiece}>
               {symbols[p.constructor.name].white}
@@ -452,11 +518,12 @@ export default class Board extends Component {
 
   render() {
     const squares = [];
-    // Render by VIEW order so orientation flips visually
+
+    // build 64 squares based on view coords, then convert to model coords
     for (let vr = 0; vr < 8; vr++) {
       for (let vc = 0; vc < 8; vc++) {
-        const [mr, mc] = this.viewToModel(vr, vc);
-        squares.push(this.renderSquare(mr, mc));
+        const model = this.viewToModel(vr, vc);
+        squares.push(this.renderSquare(model[0], model[1]));
       }
     }
 
@@ -470,6 +537,8 @@ export default class Board extends Component {
             <span style={{ marginRight: 8 }}>
               Turn: <strong>{this.state.turn}</strong>
             </span>
+
+            {/* quick indicator for when you can move */}
             <span
               style={{
                 padding: '2px 8px',
@@ -486,6 +555,7 @@ export default class Board extends Component {
 
           <div className={styles.board}>{squares}</div>
 
+          {/* pawn promotion popup */}
           {this.state.pendingPromotion && (
             <div className={styles.promotionDialog}>
               <div>Promote to:</div>
@@ -496,8 +566,10 @@ export default class Board extends Component {
               ))}
             </div>
           )}
+
           {this.renderCaptured()}
         </div>
+
         {this.renderMoveHistory()}
       </div>
     );

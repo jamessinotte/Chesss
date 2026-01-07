@@ -1,7 +1,7 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 
-// GET /api/users/profile (self) or /api/users/:userId
+
 exports.getProfile = async (req, res) => {
   try {
     const userId = req.params.userId || req.user?.id;
@@ -16,7 +16,7 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const updates = req.body;
-    delete updates.password; // block password here
+    delete updates.password; 
     const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select('-password');
     res.json(user);
   } catch (err) {
@@ -43,7 +43,7 @@ exports.changePassword = async (req, res) => {
 
 exports.getLeaderboard = async (req, res) => {
   try {
-    const mode = req.query.mode || 'blitz'; // blitz, classical, bullet
+    const mode = req.query.mode || 'blitz'; 
     const key = `mmr.${mode}`;
     const leaderboard = await User.find()
       .select('username mmr')
@@ -56,7 +56,7 @@ exports.getLeaderboard = async (req, res) => {
   }
 };
 
-// /api/users/search?query=...
+
 exports.searchUsers = async (req, res) => {
   try {
     const query = (req.query.query || req.query.username || '').trim();
@@ -71,7 +71,7 @@ exports.searchUsers = async (req, res) => {
   }
 };
 
-// Mirror endpoints the frontend expects (but friends are in friendRoutes)
+
 exports.getFriends = async (req, res) => {
   try {
     const userId = req.params.userId || req.user.id;
@@ -83,7 +83,7 @@ exports.getFriends = async (req, res) => {
   }
 };
 
-// Optional: quick "addFriend" via REST (frontend currently uses sockets)
+
 exports.addFriend = async (req, res) => {
   try {
     const { friendId } = req.body;

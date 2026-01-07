@@ -3,126 +3,318 @@ const mongoose = require('mongoose');
 const User = require('./models/User');
 const Game = require('./models/Game');
 
+// Elo rating calculation
 const elo = (playerMMR, opponentMMR, score) => {
   const expected = 1 / (1 + Math.pow(10, (opponentMMR - playerMMR) / 400));
   const k = 32;
   return Math.round(playerMMR + k * (score - expected));
 };
 
-const queues = { classical: [], blitz: [], bullet: [] };
+// queues for matchmaking
+let queues = { classical: [], blitz: [], bullet: [] };
+
+// keep track of which socket belongs to which user
+const userSockets = new Map();
 
 module.exports = (server) => {
-  const io = new Server(server, { cors: { origin: process.env.CORS_ORIGIN || '*', credentials: true } });
+  const io = new Server(server, {
+    cors: { origin: process.env.CORS_ORIGIN || '*', credentials: true }
+  });
 
   io.on('connection', async (socket) => {
+    // user id sent from frontend
     const userId = socket.handshake.query.userId;
+
+    // save socket id and mark user online
     if (userId && mongoose.isValidObjectId(userId)) {
-      try { await User.findByIdAndUpdate(userId, { status: 'online' }); } catch {}
+      userSockets.set(userId.toString(), socket.id);
+      try { await User.findByIdAndUpdate(userId, { status: 'online' }); } catch (e) {}
     }
 
-    // ==== FRIENDS via sockets (matches Home.jsx) ====
-    socket.on('sendFriendRequest', async ({ fromUserId, toUserId }) => {
+    socket.on('sendFriendRequest', async (data) => {
       try {
-        if (!fromUserId || !toUserId || fromUserId === toUserId) return;
-        const toUser = await User.findById(toUserId);
+        if (!data) return;
+
+        if (!data.fromUserId || !data.toUserId) return;
+        if (String(data.fromUserId) === String(data.toUserId)) return;
+
+        const toUser = await User.findById(data.toUserId);
         if (!toUser) return;
 
-        const exists = toUser.friendRequests.find(fr => String(fr.from) === String(fromUserId) && fr.status === 'pending');
+        let exists = false;
+        for (let i = 0; i < toUser.friendRequests.length; i++) {
+          if (
+            String(toUser.friendRequests[i].from) === String(data.fromUserId) &&
+            toUser.friendRequests[i].status === 'pending'
+          ) {
+            exists = true;
+            break;
+          }
+        }
+
         if (!exists) {
-          toUser.friendRequests.push({ from: fromUserId });
+          toUser.friendRequests.push({ from: data.fromUserId });
           await toUser.save();
         }
-        // Notify receiver
-        io.emit('friendRequestReceived', { from: fromUserId, to: toUserId });
+
+        io.emit('friendRequestReceived', { from: data.fromUserId, to: data.toUserId });
       } catch (e) {}
     });
 
-    socket.on('acceptFriendRequest', async ({ userId, requesterId }) => {
+    socket.on('acceptFriendRequest', async (data) => {
       try {
-        const user = await User.findById(userId);
-        const fr = user.friendRequests.find(r => String(r.from) === String(requesterId) && r.status === 'pending');
-        if (!fr) return;
-        fr.status = 'accepted';
-        if (!user.friends.some(id => String(id) === String(requesterId))) user.friends.push(requesterId);
-        await user.save();
+        if (!data) return;
+        const uid = data.userId;
+        const requesterId = data.requesterId;
+
+        if (!uid || !requesterId) return;
+
+        const user = await User.findById(uid);
+        if (!user) return;
+
+        let idx = -1;
+        for (let i = 0; i < user.friendRequests.length; i++) {
+          const r = user.friendRequests[i];
+          if (String(r.from) === String(requesterId) && r.status === 'pending') {
+            idx = i;
+            break;
+          }
+        }
+        if (idx === -1) return;
+
+        let alreadyFriend = false;
+        for (let i = 0; i < user.friends.length; i++) {
+          if (String(user.friends[i]) === String(requesterId)) {
+            alreadyFriend = true;
+            break;
+          }
+        }
+        if (!alreadyFriend) user.friends.push(requesterId);
 
         const requester = await User.findById(requesterId);
-        if (requester && !requester.friends.some(id => String(id) === String(userId))) {
-          requester.friends.push(userId);
-          await requester.save();
+        if (requester) {
+          let hasUser = false;
+          for (let i = 0; i < requester.friends.length; i++) {
+            if (String(requester.friends[i]) === String(uid)) {
+              hasUser = true;
+              break;
+            }
+          }
+          if (!hasUser) requester.friends.push(uid);
+          try { await requester.save(); } catch (e) {}
         }
-        io.emit('friendRequestAccepted', { by: userId, requesterId });
-      } catch (e) {}
-    });
 
-    socket.on('declineFriendRequest', async ({ userId, requesterId }) => {
-      try {
-        const user = await User.findById(userId);
-        const fr = user.friendRequests.find(r => String(r.from) === String(requesterId) && r.status === 'pending');
-        if (!fr) return;
-        fr.status = 'declined';
+        user.friendRequests.splice(idx, 1);
         await user.save();
-        io.emit('friendRequestDeclined', { by: userId, requesterId });
+
+        io.emit('friendRequestAccepted', { by: uid, requesterId });
       } catch (e) {}
     });
 
-    // ==== MATCHMAKING ====
-    socket.on('findMatch', async ({ mode }) => {
+    socket.on('declineFriendRequest', async (data) => {
       try {
+        if (!data) return;
+
+        const uid = data.userId;
+        const requesterId = data.requesterId;
+        if (!uid || !requesterId) return;
+
+        const user = await User.findById(uid);
+        if (!user) return;
+
+        let idx = -1;
+        for (let i = 0; i < user.friendRequests.length; i++) {
+          const r = user.friendRequests[i];
+          if (String(r.from) === String(requesterId) && r.status === 'pending') {
+            idx = i;
+            break;
+          }
+        }
+        if (idx === -1) return;
+
+        user.friendRequests.splice(idx, 1);
+        await user.save();
+
+        io.emit('friendRequestDeclined', { by: uid, requesterId });
+      } catch (e) {}
+    });
+
+    socket.on('inviteFriendMatch', async (data) => {
+      try {
+        if (!data) return;
+        if (!data.fromUserId || !data.toUserId) return;
+
+        if (String(data.fromUserId) === String(data.toUserId)) return;
+
+        const targetSocket = userSockets.get(String(data.toUserId));
+        if (!targetSocket) return;
+
+        const fromUser = await User.findById(data.fromUserId).select('username');
+        if (!fromUser) return;
+
+        io.to(targetSocket).emit('friendMatchInvite', {
+          fromUserId: data.fromUserId,
+          fromUsername: fromUser.username,
+          mode: data.mode
+        });
+      } catch (e) {}
+    });
+
+    socket.on('acceptFriendMatch', async (data) => {
+      try {
+        if (!data) return;
+        if (!data.fromUserId || !data.toUserId) return;
+        if (String(data.fromUserId) === String(data.toUserId)) return;
+
+        const fromSocket = userSockets.get(String(data.fromUserId));
+        const toSocket = userSockets.get(String(data.toUserId));
+        if (!fromSocket || !toSocket) return;
+
+        const fromUser = await User.findById(data.fromUserId);
+        const toUser = await User.findById(data.toUserId);
+        if (!fromUser || !toUser) return;
+
+        let white = null;
+        let black = null;
+
+        if (Math.random() > 0.5) {
+          white = fromUser;
+          black = toUser;
+        } else {
+          white = toUser;
+          black = fromUser;
+        }
+
+        const game = await Game.create({
+          mode: data.mode,
+          status: 'in-progress',
+          white: white._id,
+          black: black._id,
+          moves: []
+        });
+
+        const roomId = 'game-' + game._id.toString();
+
+        const s1 = io.sockets.sockets.get(fromSocket);
+        const s2 = io.sockets.sockets.get(toSocket);
+        if (s1) s1.join(roomId);
+        if (s2) s2.join(roomId);
+
+        io.to(fromSocket).emit('matchFound', {
+          roomId: roomId,
+          mode: data.mode,
+          color: String(white._id) === String(fromUser._id) ? 'white' : 'black',
+          opponent: String(white._id) === String(fromUser._id) ? black.username : white.username
+        });
+
+        io.to(toSocket).emit('matchFound', {
+          roomId: roomId,
+          mode: data.mode,
+          color: String(white._id) === String(toUser._id) ? 'white' : 'black',
+          opponent: String(white._id) === String(toUser._id) ? black.username : white.username
+        });
+      } catch (e) {}
+    });
+
+    socket.on('declineFriendMatch', async (data) => {
+      try {
+        if (!data) return;
+        const fromSocket = userSockets.get(String(data.fromUserId));
+        if (!fromSocket) return;
+
+        io.to(fromSocket).emit('friendMatchDeclined', { by: data.toUserId });
+      } catch (e) {}
+    });
+
+    socket.on('joinMatch', (data) => {
+      if (!data || !data.roomId) return;
+      socket.join(data.roomId);
+    });
+
+    socket.on('findMatch', async (data) => {
+      try {
+        if (!data || !data.mode) return;
+
+        const mode = data.mode;
+
         const user = await User.findById(userId);
         if (!user) return;
 
-        queues[mode] = queues[mode] || [];
-        queues[mode].push({ socketId: socket.id, user });
+        if (!queues[mode]) queues[mode] = [];
+        queues[mode].push({ socketId: socket.id, user: user });
 
         if (queues[mode].length >= 2) {
           const p1 = queues[mode].shift();
           const p2 = queues[mode].shift();
 
-          // Assign colors randomly
-          const white = Math.random() > 0.5 ? p1.user : p2.user;
-          const black = white._id.toString() === p1.user._id.toString() ? p2.user : p1.user;
+          let white = null;
+          let black = null;
+
+          if (Math.random() > 0.5) {
+            white = p1.user;
+            black = p2.user;
+          } else {
+            white = p2.user;
+            black = p1.user;
+          }
 
           const game = await Game.create({
-            mode,
+            mode: mode,
             status: 'in-progress',
             white: white._id,
             black: black._id,
             moves: []
           });
 
-          const roomId = `game-${game._id.toString()}`;
-          io.sockets.sockets.get(p1.socketId)?.join(roomId);
-          io.sockets.sockets.get(p2.socketId)?.join(roomId);
+          const roomId = 'game-' + game._id.toString();
 
-          io.sockets.sockets.get(p1.socketId)?.emit('matchFound', {
-            roomId,
-            color: (white._id.toString() === p1.user._id.toString()) ? 'white' : 'black',
-            opponent: (white._id.toString() === p1.user._id.toString()) ? black.username : white.username
-          });
+          const sp1 = io.sockets.sockets.get(p1.socketId);
+          const sp2 = io.sockets.sockets.get(p2.socketId);
+          if (sp1) sp1.join(roomId);
+          if (sp2) sp2.join(roomId);
 
-          io.sockets.sockets.get(p2.socketId)?.emit('matchFound', {
-            roomId,
-            color: (white._id.toString() === p2.user._id.toString()) ? 'white' : 'black',
-            opponent: (white._id.toString() === p2.user._id.toString()) ? black.username : white.username
-          });
+          if (sp1) {
+            sp1.emit('matchFound', {
+              roomId,
+              mode,
+              color: String(white._id) === String(p1.user._id) ? 'white' : 'black',
+              opponent: String(white._id) === String(p1.user._id) ? black.username : white.username
+            });
+          }
+
+          if (sp2) {
+            sp2.emit('matchFound', {
+              roomId,
+              mode,
+              color: String(white._id) === String(p2.user._id) ? 'white' : 'black',
+              opponent: String(white._id) === String(p2.user._id) ? black.username : white.username
+            });
+          }
         }
       } catch (e) {}
     });
 
-    // Moves
-    socket.on('playerMove', async ({ roomId, move }) => {
+    socket.on('playerMove', async (data) => {
       try {
-        const gameId = roomId?.replace('game-', '');
+        if (!data) return;
+        if (!data.roomId || !data.move) return;
+
+        const gameId = data.roomId.replace('game-', '');
         if (!mongoose.isValidObjectId(gameId)) return;
-        await Game.findByIdAndUpdate(gameId, { $push: { moves: move } });
-        io.to(roomId).emit('moveMade', move);
+
+        await Game.findByIdAndUpdate(gameId, { $push: { moves: data.move } });
+
+        io.to(data.roomId).emit('moveMade', data.move);
       } catch (e) {}
     });
 
-    // Game end (+ ELO)
-    socket.on('gameEnd', async ({ roomId, winner }) => {
+    socket.on('gameEnd', async (data) => {
       try {
+        if (!data) return;
+
+        const roomId = data.roomId;
+        const winner = data.winner;
+
         const gameId = roomId?.replace('game-', '');
         if (!mongoose.isValidObjectId(gameId)) return;
 
@@ -133,29 +325,41 @@ module.exports = (server) => {
         game.winner = winner || 'draw';
         await game.save();
 
-        const m = game.mode;
+        const mode = game.mode;
+
         const user1 = await User.findById(game.white);
         const user2 = await User.findById(game.black);
+        if (!user1 || !user2) return;
 
-        const u1mmr = user1.mmr[m];
-        const u2mmr = user2.mmr[m];
+        let s1 = 0.5;
+        let s2 = 0.5;
 
-        let s1 = 0.5, s2 = 0.5;
-        if (winner === 'white') { s1 = 1; s2 = 0; }
-        if (winner === 'black') { s1 = 0; s2 = 1; }
+        if (winner === 'white') {
+          s1 = 1;
+          s2 = 0;
+        }
+        if (winner === 'black') {
+          s1 = 0;
+          s2 = 1;
+        }
 
-        user1.mmr[m] = elo(u1mmr, u2mmr, s1);
-        user2.mmr[m] = elo(u2mmr, u1mmr, s2);
+        const old1 = user1.mmr[mode];
+        const old2 = user2.mmr[mode];
+
+        user1.mmr[mode] = elo(old1, old2, s1);
+        user2.mmr[mode] = elo(old2, old1, s2);
+
         await user1.save();
         await user2.save();
 
-        io.to(roomId).emit('gameOver', { winner });
+        io.to(roomId).emit('gameOver', { winner: winner });
       } catch (e) {}
     });
 
     socket.on('disconnect', async () => {
       if (userId && mongoose.isValidObjectId(userId)) {
-        try { await User.findByIdAndUpdate(userId, { status: 'offline' }); } catch {}
+        userSockets.delete(userId.toString());
+        try { await User.findByIdAndUpdate(userId, { status: 'offline' }); } catch (e) {}
       }
     });
   });

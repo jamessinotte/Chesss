@@ -7,7 +7,7 @@ const GameSchema = new mongoose.Schema({
   black: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   winner: { type: String, enum: ['white', 'black', 'draw', null], default: null },
 
-  // Accept either strings (UCI) or objects (your frontend sends objects)
+ 
   moves: [mongoose.Schema.Types.Mixed],
   spectators: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
 }, { timestamps: true });

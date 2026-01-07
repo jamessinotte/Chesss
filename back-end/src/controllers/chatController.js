@@ -1,6 +1,6 @@
 const Message = require('../models/Message');
 
-// POST /api/chat/send
+
 exports.sendMessage = async (req, res) => {
   try {
     const { receiverId, content } = req.body;
@@ -17,7 +17,6 @@ exports.sendMessage = async (req, res) => {
   }
 };
 
-// GET /api/chat/messages/:userId
 exports.getMessages = async (req, res) => {
   try {
     const { userId } = req.params;

@@ -7,11 +7,11 @@ const {
   getFriendRequests
 } = require('../src/controllers/friendController');
 
-// REST (frontend mainly uses sockets to create/respond; but we keep these)
+
 router.post('/send', protect, sendFriendRequest);
 router.post('/respond', protect, respondFriendRequest);
 
-// Lists (match your Home.jsx)
+
 router.get('/:userId', protect, getFriendsList);
 router.get('/requests/:userId', protect, getFriendRequests);
 

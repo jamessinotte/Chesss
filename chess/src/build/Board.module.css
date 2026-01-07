@@ -17,7 +17,6 @@
   color: #e9eef6;
 }
 
-/* Fixed, consistent grid of 8x8 */
 .board {
   display: grid;
   grid-template-columns: repeat(8, var(--square-size));
@@ -28,9 +27,10 @@
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 0 20px rgba(0,0,0,0.2);
+  box-sizing: content-box;
+  flex-shrink: 0;
 }
 
-/* Each square is fixed-size and centers content */
 .square {
   width: var(--square-size);
   height: var(--square-size);
@@ -43,151 +43,44 @@
 
 .piece {
   display: block;
-  font-size: calc(var(--square-size) * 0.8);
+  font-size: calc(var(--square-size) * 0.86);
   line-height: 1;
+  font-weight: 900;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* 🎨 Color pieces, so teams are visually obvious */
+/* white pieces were hard to see, so give them a thick dark outline */
 .whitePiece {
-  color: #f7fbff;             /* light */
-  text-shadow: 0 1px 1px rgba(0,0,0,0.25);
+  color: #ffffff;
+  text-shadow:
+    -2px -2px 0 rgba(0,0,0,0.85),
+     2px -2px 0 rgba(0,0,0,0.85),
+    -2px  2px 0 rgba(0,0,0,0.85),
+     2px  2px 0 rgba(0,0,0,0.85),
+     0px  0px 6px rgba(0,0,0,0.35);
 }
 
 .blackPiece {
-  color: #1f1f1f;             /* dark */
-  text-shadow: 0 1px 1px rgba(255,255,255,0.15);
+  color: #111;
+  text-shadow:
+    0 1px 0 rgba(255,255,255,0.25),
+    0 0 3px rgba(255,255,255,0.08);
 }
 
-/* Board colors */
 .light { background-color: #f0d9b5; }
 .dark  { background-color: #b58863; }
 
 .highlight {
   background-color: rgba(0, 255, 0, 0.28);
-  box-shadow: inset 0 0 0 3px limegreen;
+  outline: 3px solid limegreen;
+  outline-offset: -3px;
 }
 
-.selected { outline: 3px solid #e74c3c; }
-
-.capturedSection {
-  display: flex;
-  justify-content: space-around;
-  margin-top: 12px;
-  font-size: 1.4rem;
-  gap: 24px;
-  color: #e9eef6;
+.selected {
+  outline: 3px solid #e74c3c;
+  outline-offset: -3px;
 }
-
-.capturedSection div {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-.moveHistory {
-  min-width: 220px;
-  max-height: calc(var(--square-size) * 8);
-  overflow: auto;
-  padding: 10px 12px;
-  border: 1px solid #2b2f36;
-  border-radius: 8px;
-  background: #121821;
-  color: #cfe1ff;
-}
-
-.activeMove {
-  background: rgba(76, 147, 255, 0.12);
-  border-radius: 4px;
-}
-
-.promotionDialog {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: white;
-  border: 2px solid #333;
-  padding: 20px 30px;
-  z-index: 100;
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-  border-radius: 8px;
-}
-:root {
-  --square-size: 64px; /* change to taste */
-}
-
-.chessContainer {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: center;
-}
-
-.turnIndicator {
-  text-align: center;
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 10px;
-  color: #e9eef6;
-}
-
-/* Fixed, consistent grid of 8x8 */
-.board {
-  display: grid;
-  grid-template-columns: repeat(8, var(--square-size));
-  grid-template-rows: repeat(8, var(--square-size));
-  width: calc(var(--square-size) * 8);
-  height: calc(var(--square-size) * 8);
-  border: 6px solid #222;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 0 20px rgba(0,0,0,0.2);
-}
-
-/* Each square is fixed-size and centers content */
-.square {
-  width: var(--square-size);
-  height: var(--square-size);
-  display: grid;
-  place-items: center;
-  line-height: 1;
-  user-select: none;
-  transition: background-color 0.15s ease;
-}
-
-.piece {
-  display: block;
-  font-size: calc(var(--square-size) * 0.8);
-  line-height: 1;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* 🎨 Color pieces, so teams are visually obvious */
-.whitePiece {
-  color: #f7fbff;             /* light */
-  text-shadow: 0 1px 1px rgba(0,0,0,0.25);
-}
-
-.blackPiece {
-  color: #1f1f1f;             /* dark */
-  text-shadow: 0 1px 1px rgba(255,255,255,0.15);
-}
-
-/* Board colors */
-.light { background-color: #f0d9b5; }
-.dark  { background-color: #b58863; }
-
-.highlight {
-  background-color: rgba(0, 255, 0, 0.28);
-  box-shadow: inset 0 0 0 3px limegreen;
-}
-
-.selected { outline: 3px solid #e74c3c; }
 
 .capturedSection {
   display: flex;

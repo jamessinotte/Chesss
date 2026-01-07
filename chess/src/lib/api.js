@@ -1,13 +1,17 @@
-// src/lib/api.js
+
 import axios from "axios";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const DEFAULT_API_URL =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ? "http://localhost:5000"
+    : window.location.origin;
+const API_URL = import.meta.env.VITE_API_URL || DEFAULT_API_URL;
 
-// If VITE_WS_URL not provided, reuse API host (handy for Socket.IO)
-const DEFAULT_WS = API_URL.replace(/^http/, "ws");
-export const WS_URL = import.meta.env.VITE_WS_URL || DEFAULT_WS || "ws://localhost:5000";
 
-// Single axios instance; automatically attaches token if present
+export const WS_URL = import.meta.env.VITE_WS_URL || API_URL;
+
+
 export const api = axios.create({
   baseURL: `${API_URL}/api`,
 });

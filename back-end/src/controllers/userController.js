@@ -1,12 +1,14 @@
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 
-// GET /api/users/profile (self) or /api/users/:userId
 exports.getProfile = async (req, res) => {
   try {
+    // use param id if it exists, otherwise use the logged in user
     const userId = req.params.userId || req.user?.id;
+
     const user = await User.findById(userId).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
+
     res.json(user);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -16,8 +18,13 @@ exports.getProfile = async (req, res) => {
 exports.updateProfile = async (req, res) => {
   try {
     const updates = req.body;
-    delete updates.password; // block password here
-    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true }).select('-password');
+
+    // don’t let people update password from this route
+    delete updates.password;
+
+    const user = await User.findByIdAndUpdate(req.user.id, updates, { new: true })
+      .select('-password');
+
     res.json(user);
   } catch (err) {
     res.status(500).json({ message: 'Error updating profile' });
@@ -26,11 +33,16 @@ exports.updateProfile = async (req, res) => {
 
 exports.changePassword = async (req, res) => {
   try {
-    const { oldPassword, newPassword } = req.body;
+    const oldPassword = req.body.oldPassword;
+    const newPassword = req.body.newPassword;
+
     const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
     const isMatch = await user.comparePassword(oldPassword);
     if (!isMatch) return res.status(400).json({ message: 'Incorrect old password' });
 
+    // hash and save new password
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
@@ -43,8 +55,11 @@ exports.changePassword = async (req, res) => {
 
 exports.getLeaderboard = async (req, res) => {
   try {
-    const mode = req.query.mode || 'blitz'; // blitz, classical, bullet
+    // default mode is blitz if nothing is passed in
+    const mode = req.query.mode || 'blitz';
+
     const key = `mmr.${mode}`;
+
     const leaderboard = await User.find()
       .select('username mmr')
       .sort({ [key]: -1 })
@@ -56,47 +71,66 @@ exports.getLeaderboard = async (req, res) => {
   }
 };
 
-// /api/users/search?query=...
 exports.searchUsers = async (req, res) => {
   try {
-    const query = (req.query.query || req.query.username || '').trim();
+    const query = (req.query.username || req.query.query || '').trim();
+    console.log('[searchUsers] query:', query);
+
     if (!query) return res.json([]);
+
+    // case-insensitive username match
     const users = await User.find(
       { username: new RegExp(query, 'i') },
       'username status'
     );
+
+    console.log('[searchUsers] results:', users.length);
     res.json(users);
   } catch (err) {
+    console.error('[searchUsers] error:', err);
     res.status(500).json({ message: 'Error searching users' });
   }
 };
 
-// Mirror endpoints the frontend expects (but friends are in friendRoutes)
 exports.getFriends = async (req, res) => {
   try {
+    // can fetch using param or the logged in user
     const userId = req.params.userId || req.user.id;
-    const user = await User.findById(userId).populate('friends', 'username status').select('friends');
+
+    const user = await User.findById(userId)
+      .populate('friends', 'username status')
+      .select('friends');
+
     if (!user) return res.status(404).json({ message: 'User not found' });
+
     res.json(user.friends || []);
   } catch (err) {
     res.status(500).json({ message: 'Error fetching friends list' });
   }
 };
 
-// Optional: quick "addFriend" via REST (frontend currently uses sockets)
 exports.addFriend = async (req, res) => {
   try {
-    const { friendId } = req.body;
-    if (friendId === req.user.id) return res.status(400).json({ message: 'You cannot add yourself.' });
+    const friendId = req.body.friendId;
+
+    // quick check so you can't add yourself
+    if (friendId === req.user.id) {
+      return res.status(400).json({ message: 'You cannot add yourself.' });
+    }
 
     const user = await User.findById(req.user.id);
     const friend = await User.findById(friendId);
+
     if (!friend) return res.status(404).json({ message: 'Friend not found' });
-    if (user.friends.some(id => id.toString() === friendId)) {
+
+    // don’t add duplicates
+    if (user.friends.some((id) => id.toString() === friendId)) {
       return res.status(400).json({ message: 'Already friends' });
     }
+
     user.friends.push(friendId);
     friend.friends.push(user._id);
+
     await user.save();
     await friend.save();
 
